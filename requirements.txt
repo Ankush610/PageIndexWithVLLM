@@ -1,0 +1,21 @@
+# ── FastAPI service ───────────────────────────────────────────────────────────
+fastapi>=0.111.0
+pydantic>=2.7.0                # Data validation and serialisation for all JSON boundaries
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9        # multipart/form-data uploads
+python-dotenv>=1.0.0           # loads variables from .env into os.environ
+
+# ── PageIndex core dependencies (mirrors PageIndex/requirements.txt) ──────────
+litellm>=1.35.0                # LLM routing layer (used by PageIndex internally)
+openai>=1.30.0                 # LiteLLM backend; also needed for token counting
+pypdf>=4.2.0                   # PDF text extraction (default parser)
+pymupdf>=1.24.0                # Optional faster PDF parser (fitz); PageIndex supports both
+Pillow>=10.0.0                 # Image processing for vision pipeline (JPEG encode, unsharp mask)
+tiktoken>=0.7.0                # Fast tokeniser used by litellm.token_counter
+pyyaml>=6.0.1                  # PageIndex reads config.yaml
+tenacity>=8.3.0                # Retry logic inside PageIndex LLM calls
+tqdm>=4.66.0                   # Progress bars (used in batch operations)
+pypdf2==3.0.1
+
+# ── Observability / dev ───────────────────────────────────────────────────────
+httpx>=0.27.0                  # Async HTTP client (uvicorn test client + litellm)

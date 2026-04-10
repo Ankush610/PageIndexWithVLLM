@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PageIndex — Vectorless RAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<!-- PROCESSING OVERLAY -->
+<div id="proc-overlay">
+  <div class="proc-modal">
+    <div class="proc-modal-top">
+      <div class="proc-spinner"></div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Processing document</div>
+        <div class="proc-filename" id="ov-filename">Indexing…</div>
+      </div>
+    </div>
+    <div class="proc-multi" id="ov-multi" style="display:none;">
+      <span id="ov-multi-text">File 1 of 1</span>
+    </div>
+    <div id="ov-steps" style="display:none"></div>
+    <button id="cancel-index-btn" onclick="cancelIndexing()"
+      style="margin-top:20px;width:100%;padding:10px;background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:var(--font-main);cursor:pointer;transition:all .15s;">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style="margin-right:5px;vertical-align:middle"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Cancel
+    </button>
+    <div id="cancel-pending-note" style="display:none;margin-top:10px;padding:9px 12px;background:rgba(255,180,0,0.07);border:1px solid rgba(255,180,0,0.25);border-radius:8px;font-size:11px;color:#f0a500;font-family:var(--font-main);line-height:1.5;text-align:center;">
+      Cancellation requested — current document will finish, then processing will stop.
+    </div>
+  </div>
+</div>
+
+<!-- MOVE TO PROJECT MODAL -->
+<div id="move-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+  <div style="background:var(--panel-bg);border:1px solid var(--border-light);border-radius:14px;padding:24px;width:340px;max-width:92vw;">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">Move to Project</div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px;" id="move-modal-subtitle">Select a destination project</div>
+    <div id="move-modal-list" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto;margin-bottom:16px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeMoveModal()" style="padding:8px 16px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:12px;cursor:pointer;font-family:var(--font-main);">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- RENAME PROJECT MODAL -->
+<div id="rename-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+  <div style="background:var(--panel-bg);border:1px solid var(--border-light);border-radius:14px;padding:24px;width:340px;max-width:92vw;">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Rename Project</div>
+    <input id="rename-input" type="text"
+      style="width:100%;padding:9px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:var(--font-main);outline:none;margin-bottom:14px;"
+      placeholder="New project name"
+      onkeydown="if(event.key==='Enter')confirmRename();if(event.key==='Escape')closeRenameModal();">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeRenameModal()" style="padding:8px 16px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:12px;cursor:pointer;font-family:var(--font-main);">Cancel</button>
+      <button onclick="confirmRename()" style="padding:8px 16px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:12px;cursor:pointer;font-family:var(--font-main);font-weight:600;">Rename</button>
+    </div>
+  </div>
+</div>
+
+<!-- CREATE PROJECT MODAL -->
+<div id="create-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
+  <div style="background:var(--panel-bg);border:1px solid var(--border-light);border-radius:14px;padding:24px;width:340px;max-width:92vw;">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Create New Project</div>
+    <input id="create-input" type="text"
+      style="width:100%;padding:9px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:var(--font-main);outline:none;margin-bottom:14px;"
+      placeholder="Project name"
+      onkeydown="if(event.key==='Enter')confirmCreate();if(event.key==='Escape')closeCreateModal();">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeCreateModal()" style="padding:8px 16px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-size:12px;cursor:pointer;font-family:var(--font-main);">Cancel</button>
+      <button onclick="confirmCreate()" style="padding:8px 16px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:12px;cursor:pointer;font-family:var(--font-main);font-weight:600;">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="2" width="11" height="14" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M6 6h5M6 9h5M6 12h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><rect x="8" y="5" width="9" height="12" rx="2" fill="var(--bg-card)" stroke="currentColor" stroke-width="1.5"/><path d="M11 9h3M11 12h3M11 15h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
+    <div>
+      <span class="logo-text">AI RAG System</span>
+      <div style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono);margin-top:1px;">Vectorless Retrieval</div>
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <button class="sidebar-btn active" id="btn-chat" onclick="showChat()">
+      <span class="btn-icon"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 2h11a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H5l-3 2.5V3a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span> Chat
+    </button>
+    <button class="sidebar-btn" id="btn-docs" onclick="showDocs()">
+      <span class="btn-icon"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1 3a1 1 0 0 1 1-1h4l2 2h5a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span> Projects
+    </button>
+    <button class="sidebar-btn" id="btn-indexing" onclick="showIndexing()">
+      <span class="btn-icon"><svg width="15" height="15" viewBox="0 0 15 15" fill="none"><circle cx="7.5" cy="7.5" r="2" stroke="currentColor" stroke-width="1.4"/><path d="M7.5 1v1.5M7.5 12.5V14M14 7.5h-1.5M2.5 7.5H1M12.36 3.14l-1.06 1.06M3.7 10.8l-1.06 1.06M12.36 11.86l-1.06-1.06M3.7 4.2L2.64 3.14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span> Indexing
+    </button>
+  </div>
+
+  <div id="proc-banner"
+    style="display:none;margin:8px 8px 0;align-items:center;gap:6px;padding:7px 10px;background:rgba(240,154,62,.08);border:1px solid rgba(240,154,62,.22);border-radius:8px;font-size:11px;color:var(--orange);font-family:var(--font-mono);">
+    <div class="proc-spinner" style="width:10px;height:10px;border-width:1.5px;flex-shrink:0;"></div>
+    <span id="proc-banner-text">Indexing…</span>
+  </div>
+
+  <div class="sidebar-footer">
+    <div style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono);">Total Documents: <span id="sb-total-docs">0</span></div>
+    <div style="font-size:10px;color:var(--text-dim);font-family:var(--font-mono);margin-top:3px;">Selected: <span id="sb-selected">0</span></div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main id="main">
+
+  <!-- CHAT VIEW -->
+  <div id="view-chat" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+    <div id="header">
+      <div class="header-doc-pill" id="active-doc-pill" onclick="showDocs()">
+        <div class="doc-dot"></div>
+        <span class="doc-name" id="active-doc-name">No document selected</span>
+      </div>
+      <div class="header-spacer"></div>
+      <button onclick="clearChat()"
+        style="background:transparent;border:1px solid var(--border);color:var(--text-muted);padding:5px 12px;border-radius:7px;font-size:11px;cursor:pointer;font-family:var(--font-main);">
+        Clear Chat
+      </button>
+      <div class="header-tag">RAG ∙ Tree</div>
+    </div>
+
+    <div id="messages" style="flex:1;overflow-y:auto;">
+      <div id="empty-state">
+        <div class="empty-icon"><svg width="48" height="48" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="8" r="4" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="30" r="4" stroke="currentColor" stroke-width="2"/><circle cx="38" cy="30" r="4" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="42" r="4" stroke="currentColor" stroke-width="2"/><path d="M24 12v8M24 20l-10 6M24 20l14 6M10 34v4M38 34v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <div class="empty-title">Reasoning over structure</div>
+        <div class="empty-sub">Select documents and ask questions. PageIndex builds a hierarchical tree and uses LLM reasoning to navigate — no embeddings, no similarity search.</div>
+        <div class="suggestion-chips">
+          <div class="chip" onclick="useChip(this)">What are the main findings?</div>
+          <div class="chip" onclick="useChip(this)">Summarize the methodology</div>
+          <div class="chip" onclick="useChip(this)">What models are used?</div>
+          <div class="chip" onclick="useChip(this)">List the key conclusions</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="no-doc-warning" class="no-doc-banner hidden">
+      <div class="no-doc-pill" onclick="showDocs()">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="flex-shrink:0;margin-right:5px;vertical-align:middle"><path d="M7 1L13 12H1L7 1Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7 5.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="7" cy="10" r="0.6" fill="currentColor"/></svg>
+        No document selected — open Projects and select one
+      </div>
+    </div>
+
+    <div id="input-area">
+      <div class="input-bar" id="input-bar">
+        <div id="page-ctx-stack"></div>
+        <div class="input-bar-row">
+          <textarea id="query-input" rows="1" placeholder="Ask a question about your document…"
+            onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="send-btn" id="send-btn" onclick="sendQuery()" title="Send">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 13L13 7L1 1V5.5L9 7L1 8.5V13Z" fill="white"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROJECTS VIEW -->
+  <div id="view-docs" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- PROJECT GRID (top level) -->
+    <div id="view-projects-grid" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+      <div class="lib-header-fixed">
+        <div class="library-header">
+          <div class="library-title">Projects</div>
+          <span class="lib-count" id="lib-count">0 docs</span>
+          <div style="flex:1;"></div>
+          <button onclick="openCreateModal()"
+            style="display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:var(--font-main);font-weight:600;transition:opacity .15s;"
+            onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="white" stroke-width="1.6" stroke-linecap="round"/></svg>New Project
+          </button>
+        </div>
+        <div class="library-subtitle">Click a project to browse and select documents for chat</div>
+      </div>
+      <div class="lib-scrollable">
+        <div class="project-grid" id="project-grid"></div>
+      </div>
+    </div>
+
+    <!-- PROJECT DETAIL (inside a project — double-click) -->
+    <div id="view-project-detail" style="display:none;flex:1;flex-direction:column;overflow:hidden;">
+      <div class="lib-header-fixed">
+        <!-- Breadcrumb -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;">
+          <button onclick="exitProject()"
+            style="display:flex;align-items:center;gap:5px;background:transparent;border:none;color:var(--text-muted);font-size:12px;cursor:pointer;font-family:var(--font-main);padding:0;transition:color .15s;"
+            onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-muted)'">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M8 2L3 6.5 8 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Projects
+          </button>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 2l4 3-4 3" stroke="var(--text-dim)" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <span style="font-size:12px;color:var(--text);" id="detail-project-name">—</span>
+        </div>
+
+        <div class="library-header" style="padding:0 0 4px;">
+          <div class="library-title" id="detail-title">Project</div>
+          <div style="flex:1;"></div>
+          <button id="btn-rename-project" onclick="openRenameModal()"
+            style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;font-family:var(--font-main);transition:all .15s;margin-right:6px;display:flex;align-items:center;gap:5px;"
+            onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M8 2l2 2-6 6H2V8l6-6Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>Rename
+          </button>
+          <button id="btn-delete-project" onclick="deleteCurrentProject()"
+            style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;font-family:var(--font-main);transition:all .15s;display:flex;align-items:center;gap:5px;"
+            onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M3.5 3.5l.7 8h5.6l.7-8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Delete Project
+          </button>
+        </div>
+
+        <!-- Doc selection toolbar -->
+        <div id="detail-toolbar" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;">
+          <span style="font-size:12px;color:var(--text-muted);font-family:var(--font-mono);" id="detail-sel-count">0 selected</span>
+          <div style="flex:1;"></div>
+          <button onclick="activateSelectedDocs()"
+            style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--font-main);transition:all .15s;display:flex;align-items:center;gap:5px;"
+            onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--green)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M6 2v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Activate for chat
+          </button>
+          <button onclick="deactivateSelectedDocs()"
+            style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--font-main);transition:all .15s;display:flex;align-items:center;gap:5px;"
+            onmouseover="this.style.borderColor='var(--orange)';this.style.color='var(--orange)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Deactivate
+          </button>
+          <button onclick="moveSelectedDocs()"
+            style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--font-main);transition:all .15s;display:flex;align-items:center;gap:5px;"
+            onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M7 3l3 3-3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Move to…
+          </button>
+          <button onclick="deleteSelectedDetail()"
+            style="background:transparent;color:var(--text-muted);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:var(--font-main);transition:all .15s;display:flex;align-items:center;gap:5px;"
+            onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+            onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none"><path d="M2 3.5h10M5.5 3.5V2.5h3v1M3.5 3.5l.7 8h5.6l.7-8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Delete
+          </button>
+          <button onclick="clearDetailSelection()"
+            style="background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:var(--font-main);">
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div style="font-size:11px;color:var(--text-dim);margin-top:8px;" id="detail-subtitle">Select docs to add to chat session</div>
+      </div>
+      <div class="lib-scrollable">
+        <div id="detail-doc-list" style="display:flex;flex-direction:column;gap:6px;padding:4px 0;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INDEXING VIEW -->
+  <div id="view-indexing" class="hidden" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+    <div class="lib-header-fixed" style="flex:1;overflow-y:auto;">
+      <div class="library-header">
+        <div class="library-title">Indexing</div>
+      </div>
+      <div class="library-subtitle">Upload and index documents for RAG</div>
+
+      <div class="upload-zone" id="upload-zone"
+        onclick="document.getElementById('file-input').click()"
+        ondragover="event.preventDefault();this.classList.add('drag-over')"
+        ondragleave="this.classList.remove('drag-over')"
+        ondrop="handleDrop(event)">
+        <div class="upload-icon"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M14 20V10M14 10l-5 5M14 10l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20v2a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <div class="upload-zone-text">Upload Documents</div>
+        <div class="upload-zone-sub">Drag and drop files here, or click to browse</div>
+        <button class="upload-btn" onclick="event.stopPropagation();document.getElementById('file-input').click()">Browse Files</button>
+        <div class="upload-zone-hint">Supported format: PDF</div>
+      </div>
+      <input type="file" id="file-input" accept=".pdf" multiple style="display:none" onchange="onFilesSelected(event)">
+
+      <div id="staged-files" style="display:none;margin:0 0 16px;">
+        <div id="staged-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px;"></div>
+        <button id="start-index-btn" onclick="startIndexing()"
+          style="width:100%;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-family:var(--font-main);font-weight:600;cursor:pointer;">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="margin-right:6px;vertical-align:middle"><path d="M3 2l7 4-7 4V2Z" fill="white"/></svg>Start Indexing
+        </button>
+      </div>
+
+      <div class="ix-settings">
+        <div class="ix-settings-header" onclick="toggleIxSettings()">
+          <span>Indexing Settings</span>
+          <span class="ix-chevron" id="ix-chevron"><svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M4 3l4 3-4 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </div>
+        <div class="ix-settings-body hidden" id="ix-settings-body">
+
+          <div class="ix-row">
+            <div class="ix-label-row">
+              <div>
+                <span class="ix-label">Save to Project</span>
+                <div class="ix-desc" style="margin-top:4px;">Choose which project this document will be saved into after indexing.</div>
+              </div>
+              <select id="project-select"
+                style="background:var(--card-bg);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:12px;font-family:var(--font-mono);padding:5px 9px;cursor:pointer;outline:none;min-width:120px;max-width:160px;">
+                <option value="default">default</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="ix-row">
+            <div class="ix-label-row">
+              <div>
+                <span class="ix-label">TOC Scan Pages</span>
+                <div class="ix-desc" style="margin-top:4px;">Pages to scan for a Table of Contents. <strong>Keep at 0</strong> — higher values can hit model output limits.</div>
+              </div>
+              <input type="number" class="ix-number-input" id="toc-num" min="0" max="30" value="0"
+                oninput="document.getElementById('toc-slider').value=this.value;document.getElementById('toc-val').textContent=this.value">
+            </div>
+            <input type="range" min="0" max="30" value="0" class="ix-slider" id="toc-slider"
+              oninput="document.getElementById('toc-val').textContent=this.value;document.getElementById('toc-num').value=this.value">
+            <span class="ix-value" id="toc-val">0</span>
+          </div>
+
+          <div class="ix-row">
+            <div class="ix-label-row">
+              <div>
+                <span class="ix-label">Max Pages Per Node</span>
+                <div class="ix-desc" style="margin-top:4px;">Sections larger than this are split. <strong>Lower = finer tree but more LLM calls.</strong></div>
+              </div>
+              <input type="number" class="ix-number-input" id="node-num" min="2" max="30" value="5"
+                oninput="document.getElementById('node-slider').value=this.value;document.getElementById('node-val').textContent=this.value">
+            </div>
+            <input type="range" min="2" max="30" value="5" class="ix-slider" id="node-slider"
+              oninput="document.getElementById('node-val').textContent=this.value;document.getElementById('node-num').value=this.value">
+            <span class="ix-value" id="node-val">5</span>
+          </div>
+
+          <div class="ix-row">
+            <div class="ix-label-row">
+              <div>
+                <span class="ix-label">Node Summaries</span>
+                <div class="ix-desc" style="margin-top:4px;">One-sentence summary per section. <strong>Adds ~1 LLM call per section.</strong></div>
+              </div>
+              <label class="ix-toggle"><input type="checkbox" id="summary-toggle"><span class="ix-toggle-slider"></span></label>
+            </div>
+          </div>
+
+          <div class="ix-row">
+            <div class="ix-label-row">
+              <div>
+                <span class="ix-label">Document Description</span>
+                <div class="ix-desc" style="margin-top:4px;">Generate a one-sentence description. <strong>Requires Node Summaries to be on.</strong></div>
+              </div>
+              <label class="ix-toggle"><input type="checkbox" id="doc-description-toggle"><span class="ix-toggle-slider"></span></label>
+            </div>
+          </div>
+
+          <div class="ix-row">
+            <div class="ix-label-row">
+              <div>
+                <span class="ix-label">LLM Vision Parser</span>
+                <div class="ix-desc" style="margin-top:4px;">Read each page as an image via vision model. <strong>Slower but more accurate</strong> for scanned or image-heavy PDFs.</div>
+              </div>
+              <label class="ix-toggle"><input type="checkbox" id="use-llm-parser-toggle"><span class="ix-toggle-slider"></span></label>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+
+<!-- Resizer handle between chat and PDF panel -->
+<div id="pdf-resizer" class="pdf-resizer" style="display:none;"></div>
+
+<!-- PDF side panel — flex sibling of #main, pushes chat left -->
+<div id="pdf-panel" class="pdf-panel">
+  <div class="pdf-panel-header">
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style="flex-shrink:0;color:var(--text-dim)"><path d="M2 2h7l3 3v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9 2v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    <span id="pdf-panel-label" class="pdf-panel-label"></span>
+    <button class="pdf-panel-close" onclick="closePdfPanel()" title="Close">
+      <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="pdf-panel-body">
+    <img id="pdf-panel-img" class="pdf-panel-img" alt="PDF page" />
+    <div id="pdf-panel-err" class="pdf-panel-err" style="display:none;"></div>
+  </div>
+  <div class="pdf-panel-footer">
+    <button class="pdf-footer-btn" onclick="pdfAddToChat()" title="Add this page content to chat context">
+      <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      Add page to chat
+    </button>
+    <div class="pdf-footer-right">
+      <span id="pdf-page-label" class="pdf-page-label">p. 1</span>
+      <button id="pdf-nav-prev" class="pdf-nav-btn" onclick="pdfNavPrev()" title="Previous page">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M7.5 2l-4 4 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="pdf-nav-next" class="pdf-nav-btn" onclick="pdfNavNext()" title="Next page">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M4.5 2l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="pdf-nav-btn" onclick="pdfZoomOut()" title="Zoom out">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+      <span id="pdf-zoom-label" class="pdf-zoom-label">100%</span>
+      <button class="pdf-nav-btn" onclick="pdfZoomIn()" title="Zoom in">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
